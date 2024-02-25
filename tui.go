@@ -76,6 +76,9 @@ func (model *OverviewModel) renderHierarchy() string {
 	parent := model.Overview.ParentInfo
 	group := model.Overview.GroupInfo
 	target := model.Overview.TargetInfo
+	ret += fmt.Sprintf("%s %s\n", genericLabel.Render("Exe:  "), target.MainExec)
+	ret += fmt.Sprintf("%s %s\n", genericLabel.Render("Cwd:  "), target.MainCWD)
+	ret += fmt.Sprintf("%s %v\n\n", genericLabel.Render("Since:"), time.Duration(model.Overview.Uptime-time.Duration(model.Overview.TargetInfo.StartSecSinceBoot)*time.Second).Round(1*time.Second))
 	ret += fmt.Sprintf("%s %s %d %s (%s:%s)\n",
 		genericLabel.Render("┌Session   "), renderTaskState(session.MainStat.State, session.MainStat.State),
 		session.MainStat.PID, session.MainComm, session.MainStatus.UIDs[0], session.MainStatus.GIDs[0])
@@ -102,8 +105,8 @@ func (model *OverviewModel) renderHierarchy() string {
 			genericLabel.Render(" └┬Parent  "), renderTaskState(parent.MainStat.State, parent.MainStat.State),
 			parent.MainStat.PID, parent.MainComm, parent.MainStatus.UIDs[0], parent.MainStatus.GIDs[0])
 	}
-	ret += fmt.Sprintf("%s %s %d %s (%s:%s)\n",
-		genericLabel.Render("  └Target >"), renderTaskState(target.MainStat.State, target.MainStat.State),
+	ret += fmt.Sprintf("%sTarget > %s %d %s (%s:%s)\n",
+		genericLabel.Render("  └"), renderTaskState(target.MainStat.State, target.MainStat.State),
 		target.MainStat.PID, target.MainComm, target.MainStatus.UIDs[0], target.MainStatus.GIDs[0])
 	return ret + "\n"
 }
@@ -126,7 +129,6 @@ func (model *OverviewModel) renderResourceUsage() string {
 		ret += renderTaskState(stat.State, strconv.Itoa(i)) + " "
 	}
 	ret += "\n"
-	ret += fmt.Sprintf("%s%v", genericLabel.Render("Up for:  "), time.Duration(model.Overview.Uptime-time.Duration(model.Overview.TargetInfo.StartSecSinceBoot)*time.Second).Round(1*time.Second)) + "\n"
 	return ret
 }
 

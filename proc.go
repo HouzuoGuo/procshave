@@ -1,16 +1,12 @@
 package main
 
 import (
+	"log"
 	"time"
 
 	"github.com/prometheus/procfs"
 	"github.com/tklauser/go-sysconf"
 )
-
-type ProcessCommand struct {
-	ID         int
-	Executable string
-}
 
 type ProcessInfo struct {
 	PID            int
@@ -20,12 +16,13 @@ type ProcessInfo struct {
 	Status            []procfs.ProcStatus
 	Stat              []procfs.ProcStat
 	StartSecSinceBoot int
+	FDPath            map[int]string
 
-	MainComm    string
-	MainExec    string
-	MainCmdline []string
-	MainStat    procfs.ProcStat
-	MainStatus  procfs.ProcStatus
+	MainComm   string
+	MainExec   string
+	MainCWD    string
+	MainStat   procfs.ProcStat
+	MainStatus procfs.ProcStatus
 }
 
 func (proc *ProcessInfo) Refresh() {
@@ -39,17 +36,28 @@ func (proc *ProcessInfo) Refresh() {
 		proc.Status = append(proc.Status, status)
 		if thread.PID == proc.PID {
 			proc.MainComm, _ = thread.Comm()
-			proc.MainCmdline, _ = thread.CmdLine()
 			proc.MainExec, _ = thread.Executable()
 			proc.MainStat = stat
+			proc.MainCWD, _ = thread.Cwd()
 			proc.MainStatus = status
 			proc.StartSecSinceBoot = int(stat.Starttime) / proc.ticksPerSecond
+			fdTargets, _ := thread.FileDescriptorTargets()
+			fdNumbers, _ := thread.FileDescriptors()
+			if len(fdTargets) == len(fdNumbers) {
+				proc.FDPath = make(map[int]string)
+				for i, fd := range fdNumbers {
+					proc.FDPath[int(fd)] = fdTargets[i]
+				}
+			}
 		}
 	}
 }
 
 func NewProcessInfo(pid int) *ProcessInfo {
-	ret := &ProcessInfo{PID: pid}
+	ret := &ProcessInfo{
+		PID:    pid,
+		FDPath: make(map[int]string),
+	}
 	ticksPerSecond, err := sysconf.Sysconf(sysconf.SC_CLK_TCK)
 	if err != nil {
 		return ret
@@ -80,6 +88,17 @@ func NewOverview(pid int) *Overview {
 	ret.GroupInfo = NewProcessInfo(ret.TargetInfo.MainStat.PGRP)
 	ret.SessionInfo = NewProcessInfo(ret.TargetInfo.MainStat.Session)
 	ret.Refresh()
+	go func(pid int) {
+		for {
+			bpf := &Bpftrace{PID: pid}
+			fdstat, err := bpf.StartFileDescriptorIP(2)
+			if err != nil {
+				log.Printf("@@@@@@@@ bpftrace err: %v", err)
+				break
+			}
+			log.Printf("@@@ stats: %+v", fdstat)
+		}
+	}(pid)
 	return ret
 }
 
