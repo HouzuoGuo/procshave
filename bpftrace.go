@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"sort"
 	"strconv"
 )
 
@@ -77,4 +78,51 @@ func (bpf *Bpftrace) StartFileDescriptorIP(durationSec int) (*FDTrace, error) {
 type FDTrace struct {
 	ReadBytesPerFD    map[int]int
 	WrittenBytesPerFD map[int]int
+}
+
+type FileIOCounter struct {
+	Name                    string
+	ReadBytes, WrittenBytes int
+}
+
+type FileTrace struct {
+	ByName map[string]*FileIOCounter
+	ByRate []*FileIOCounter
+}
+
+func (trace *FDTrace) FileTrace(fdPaths map[int]string) *FileTrace {
+	ret := &FileTrace{
+		ByName: make(map[string]*FileIOCounter),
+		ByRate: []*FileIOCounter{},
+	}
+	for fd, read := range trace.ReadBytesPerFD {
+		fileName, exists := fdPaths[fd]
+		if !exists {
+			continue
+		}
+		if _, exists := ret.ByName[fileName]; !exists {
+			ret.ByName[fileName] = &FileIOCounter{Name: fileName}
+		}
+		ret.ByName[fileName].ReadBytes = read
+	}
+	for fd, written := range trace.WrittenBytesPerFD {
+		fileName, exists := fdPaths[fd]
+		if !exists {
+			continue
+		}
+		if _, exists := ret.ByName[fileName]; !exists {
+			ret.ByName[fileName] = &FileIOCounter{Name: fileName}
+		}
+		ret.ByName[fileName].WrittenBytes = written
+	}
+
+	for _, ioCounter := range ret.ByName {
+		ret.ByRate = append(ret.ByRate, ioCounter)
+	}
+	sort.Slice(ret.ByRate, func(i, j int) bool {
+		a := ret.ByRate[i]
+		b := ret.ByRate[j]
+		return a.ReadBytes+a.WrittenBytes < b.ReadBytes+b.WrittenBytes
+	})
+	return ret
 }

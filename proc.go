@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"sync"
 	"time"
 
 	"github.com/prometheus/procfs"
@@ -67,7 +68,7 @@ func NewProcessInfo(pid int) *ProcessInfo {
 	return ret
 }
 
-type Overview struct {
+type ProcInfo struct {
 	PID          int
 	Uptime       time.Duration
 	SessionInfo  *ProcessInfo
@@ -75,10 +76,13 @@ type Overview struct {
 	GroupInfo    *ProcessInfo
 	ParentInfo   *ProcessInfo
 	TargetInfo   *ProcessInfo
+	FDStat       *FDTrace
+
+	Mutex *sync.RWMutex
 }
 
-func NewOverview(pid int) *Overview {
-	ret := &Overview{PID: pid}
+func NewProcInfo(pid int, bpfSampleIntervalSec int) *ProcInfo {
+	ret := &ProcInfo{PID: pid, FDStat: &FDTrace{}, Mutex: new(sync.RWMutex)}
 	fs, _ := procfs.NewDefaultFS()
 	stat, _ := fs.Stat()
 	ret.Uptime = time.Since(time.Unix(int64(stat.BootTime), 0))
@@ -91,18 +95,22 @@ func NewOverview(pid int) *Overview {
 	go func(pid int) {
 		for {
 			bpf := &Bpftrace{PID: pid}
-			fdstat, err := bpf.StartFileDescriptorIP(2)
+			fdstat, err := bpf.StartFileDescriptorIP(bpfSampleIntervalSec)
 			if err != nil {
 				log.Printf("@@@@@@@@ bpftrace err: %v", err)
 				break
 			}
-			log.Printf("@@@ stats: %+v", fdstat)
+			ret.Mutex.Lock()
+			ret.FDStat = fdstat
+			ret.Mutex.Unlock()
 		}
 	}(pid)
 	return ret
 }
 
-func (overview *Overview) Refresh() {
+func (overview *ProcInfo) Refresh() {
+	overview.Mutex.Lock()
+	defer overview.Mutex.Unlock()
 	fs, _ := procfs.NewDefaultFS()
 	stat, _ := fs.Stat()
 	overview.Uptime = time.Since(time.Unix(int64(stat.BootTime), 0))
