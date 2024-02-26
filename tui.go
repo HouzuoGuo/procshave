@@ -17,16 +17,13 @@ var (
 		return lipgloss.NewStyle().BorderStyle(b).Padding(0, 1)
 	}()
 
-	// white adapted to the terminal emulator's theme
-	genericLabel = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#000000"))
-	// green adapted to the terminal emulator's theme
-	overviewRunningTaskStyle = lipgloss.NewStyle().Background(lipgloss.Color("#00ff00"))
-	// blue adapted to the terminal emulator's theme
-	overviewSleepingTaskStyle = lipgloss.NewStyle().Background(lipgloss.Color("#0000ff"))
-	// red adapted to the terminal emulator's theme
-	overviewOtherTaskStyle = lipgloss.NewStyle().Background(lipgloss.Color("##ff0000"))
-	overviewModelStyle     = lipgloss.NewStyle().Width(50).Height(5).Align(lipgloss.Left, lipgloss.Top).BorderStyle(lipgloss.NormalBorder())
-	oocusedOverviewStyle   = lipgloss.NewStyle().Inherit(overviewModelStyle).
+	genericLabel              = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#38598b"))
+	overviewRunningTaskStyle  = lipgloss.NewStyle().Background(lipgloss.Color("#346357"))
+	overviewSleepingTaskStyle = lipgloss.NewStyle().Background(lipgloss.Color("#5585b5"))
+	overviewOtherTaskStyle    = lipgloss.NewStyle().Background(lipgloss.Color("#f76b8a"))
+
+	overviewModelStyle   = lipgloss.NewStyle().Width(50).Height(5).Align(lipgloss.Left, lipgloss.Top).BorderStyle(lipgloss.NormalBorder())
+	oocusedOverviewStyle = lipgloss.NewStyle().Inherit(overviewModelStyle).
 				BorderStyle(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("228")).BorderBackground(lipgloss.Color("63"))
 )
 
@@ -105,7 +102,7 @@ func (model *OverviewModel) renderHierarchy() string {
 			genericLabel.Render(" └┬Parent  "), renderTaskState(parent.MainStat.State, parent.MainStat.State),
 			parent.MainStat.PID, parent.MainComm, parent.MainStatus.UIDs[0], parent.MainStatus.GIDs[0])
 	}
-	ret += fmt.Sprintf("%sTarget > %s %d %s (%s:%s)\n",
+	ret += fmt.Sprintf("%sTarget • %s %d %s (%s:%s)\n",
 		genericLabel.Render("  └"), renderTaskState(target.MainStat.State, target.MainStat.State),
 		target.MainStat.PID, target.MainComm, target.MainStatus.UIDs[0], target.MainStatus.GIDs[0])
 	return ret + "\n"
@@ -124,11 +121,30 @@ func renderTaskState(state, caption string) string {
 
 func (model *OverviewModel) renderResourceUsage() string {
 	var ret string
-	ret += fmt.Sprintf("%s", genericLabel.Render("Threads: "))
-	for i, stat := range model.Overview.TargetInfo.Stat {
-		ret += renderTaskState(stat.State, strconv.Itoa(i)) + " "
+	if len(model.Overview.TargetInfo.Stat) <= 32 {
+		ret += fmt.Sprintf("%s", genericLabel.Render("Threads: "))
+		for i, stat := range model.Overview.TargetInfo.Stat {
+			ret += renderTaskState(stat.State, strconv.Itoa(i)) + " "
+		}
+		ret += "\n"
+	} else {
+		var sleeping, running, other int
+		for _, stat := range model.Overview.TargetInfo.Stat {
+			switch stat.State {
+			case "S":
+				sleeping++
+			case "R":
+				running++
+			default:
+				other++
+			}
+		}
+		ret += fmt.Sprintf("%s%s %s %s", genericLabel.Render("Threads: "),
+			renderTaskState("R", fmt.Sprintf("%-4d running", running)),
+			renderTaskState("S", fmt.Sprintf("%-4d sleeping", sleeping)),
+			renderTaskState("other", fmt.Sprintf("%-3d other", other)),
+		)
 	}
-	ret += "\n"
 	return ret
 }
 
