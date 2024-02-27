@@ -43,6 +43,31 @@ func (model *FileIOModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return model, nil
 }
 
+func (model *FileIOModel) ioRateCaption(sum int) string {
+	average := sum / model.BPFSampleIntervalSec
+	if average > 1024*1048576 {
+		gb := average / 1024 / 1048576
+		if gb == 0 {
+			gb = 1
+		}
+		return fmt.Sprintf("%4dGB/s", gb)
+	} else if average > 1048576 {
+		mb := average / 1048576
+		if mb == 0 {
+			mb = 1
+		}
+		return fmt.Sprintf("%4dMB/s", mb)
+	} else if average > 1024 {
+		kb := average / 1024
+		if kb == 0 {
+			kb = 1
+		}
+		return fmt.Sprintf("%4dKB/s", kb)
+	} else {
+		return fmt.Sprintf("%4d B/s", average)
+	}
+}
+
 func (model *FileIOModel) View() string {
 	var ret string
 	ret += genericLabel.Render("File R/W IO estimates may be off by ~20%.") + "\n"
@@ -52,13 +77,7 @@ func (model *FileIOModel) View() string {
 		return ret
 	}
 	for _, file := range files.ByRate {
-		if file.ReadBytes > 1024*1048576 {
-			ret += fmt.Sprintf("%4dGB/s R %4dGB/s W - %s\n", file.ReadBytes/1048576/1024/model.BPFSampleIntervalSec, file.WrittenBytes/1048576/1024/model.BPFSampleIntervalSec, file.Name)
-		} else if file.ReadBytes > 1048576 {
-			ret += fmt.Sprintf("%4dMB/s R %4dMB/s W - %s\n", file.ReadBytes/1048576/model.BPFSampleIntervalSec, file.WrittenBytes/1048576/model.BPFSampleIntervalSec, file.Name)
-		} else {
-			ret += fmt.Sprintf("%4dKB/s R %4dKB/s W - %s\n", file.ReadBytes/1024/model.BPFSampleIntervalSec, file.WrittenBytes/1024/model.BPFSampleIntervalSec, file.Name)
-		}
+		ret += fmt.Sprintf("%s R %s W - %s\n", model.ioRateCaption(file.ReadBytes), model.ioRateCaption(file.WrittenBytes), file.Name)
 	}
 	return ret
 }

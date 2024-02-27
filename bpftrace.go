@@ -122,7 +122,7 @@ func (trace *FDTrace) FileTrace(fdPaths map[int]string) *FileTrace {
 	sort.Slice(ret.ByRate, func(i, j int) bool {
 		a := ret.ByRate[i]
 		b := ret.ByRate[j]
-		return a.ReadBytes+a.WrittenBytes < b.ReadBytes+b.WrittenBytes
+		return a.ReadBytes+a.WrittenBytes > b.ReadBytes+b.WrittenBytes
 	})
 	return ret
 }
