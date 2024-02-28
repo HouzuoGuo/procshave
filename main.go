@@ -19,9 +19,10 @@ func main() {
 
 	procInfo := NewProcInfo(pid, BPFSampleIntervalSec)
 	model := &MainModel{
-		ProcInfo:       procInfo,
-		OverviewModel:  NewOverviewModel(pid, procInfo, 1*time.Second),
-		FileStatsModel: NewFileStatsModel(pid, procInfo, BPFSampleIntervalSec),
+		ProcInfo:      procInfo,
+		OverviewModel: NewOverviewModel(pid, procInfo, 1*time.Second),
+		FileModel:     NewFileModel(pid, procInfo, BPFSampleIntervalSec),
+		NetModel:      NewNetModel(pid, procInfo, BPFSampleIntervalSec),
 	}
 	if _, err := tea.NewProgram(model, tea.WithAltScreen()).Run(); err != nil {
 		log.Panic(err)

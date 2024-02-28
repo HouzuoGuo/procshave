@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	MaxPanel = 2
+	MaxPanel = 3
 )
 
 type RefreshMessage time.Time
@@ -18,10 +18,11 @@ func refreshAfter(interval time.Duration) tea.Cmd {
 }
 
 type MainModel struct {
-	FocusIndex     int
-	ProcInfo       *ProcInfo
-	OverviewModel  *OverviewModel
-	FileStatsModel *FileIOModel
+	FocusIndex    int
+	ProcInfo      *ProcInfo
+	OverviewModel *OverviewModel
+	FileModel     *FileModel
+	NetModel      *NetModel
 }
 
 func (model *MainModel) Init() tea.Cmd {
@@ -47,7 +48,7 @@ func (model *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	_, overviewUpdate := model.OverviewModel.Update(msg)
-	_, fileStatsUpdate := model.FileStatsModel.Update(msg)
+	_, fileStatsUpdate := model.FileModel.Update(msg)
 	return model, tea.Batch(overviewUpdate, fileStatsUpdate)
 }
 
@@ -60,10 +61,18 @@ func (model *MainModel) View() string {
 		overview = model.OverviewModel.GetFocusedStyle().Render(model.OverviewModel.View())
 	}
 
-	fileStats := model.FileStatsModel.GetRegularStyle().Render(model.FileStatsModel.View())
+	fileStats := model.FileModel.GetRegularStyle().Render(model.FileModel.View())
 	if model.FocusIndex == 1 {
-		fileStats = model.FileStatsModel.GetFocusedStyle().Render(model.FileStatsModel.View())
+		fileStats = model.FileModel.GetFocusedStyle().Render(model.FileModel.View())
 	}
 
-	return lipgloss.JoinHorizontal(lipgloss.Top, overview, fileStats)
+	netStats := model.NetModel.GetRegularStyle().Render(model.NetModel.View())
+	if model.FocusIndex == 2 {
+		netStats = model.NetModel.GetFocusedStyle().Render(model.NetModel.View())
+	}
+
+	return lipgloss.JoinVertical(lipgloss.Top,
+		lipgloss.JoinHorizontal(lipgloss.Left, overview, fileStats, netStats),
+		lipgloss.JoinHorizontal(lipgloss.Left, netStats),
+	)
 }

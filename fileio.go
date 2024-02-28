@@ -8,22 +8,22 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-type FileIOModel struct {
+type FileModel struct {
 	PID                  int
 	BPFSampleIntervalSec int
 	Proc                 *ProcInfo
 	TermWidth            int
 }
 
-func NewFileStatsModel(pid int, procInfo *ProcInfo, bpfSampleIntervalSec int) *FileIOModel {
-	return &FileIOModel{PID: pid, Proc: procInfo, BPFSampleIntervalSec: bpfSampleIntervalSec}
+func NewFileModel(pid int, procInfo *ProcInfo, bpfSampleIntervalSec int) *FileModel {
+	return &FileModel{PID: pid, Proc: procInfo, BPFSampleIntervalSec: bpfSampleIntervalSec}
 }
 
-func (model *FileIOModel) Init() tea.Cmd {
+func (model *FileModel) Init() tea.Cmd {
 	return nil
 }
 
-func (model *FileIOModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (model *FileModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -36,20 +36,20 @@ func (model *FileIOModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return model, nil
 }
 
-func (model *FileIOModel) GetRegularStyle() lipgloss.Style {
+func (model *FileModel) GetRegularStyle() lipgloss.Style {
 	return lipgloss.NewStyle().
 		Width(model.TermWidth/2-2).Height(12).Align(lipgloss.Left, lipgloss.Top).
 		BorderStyle(lipgloss.RoundedBorder())
 }
 
-func (model *FileIOModel) GetFocusedStyle() lipgloss.Style {
+func (model *FileModel) GetFocusedStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Inherit(model.GetRegularStyle()).
 		BorderStyle(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("228")).
 		BorderBackground(lipgloss.Color("63"))
 }
 
-func (model *FileIOModel) ioRateCaption(sum int) string {
+func (model *FileModel) ioRateCaption(sum int) string {
 	average := sum / model.BPFSampleIntervalSec
 	if average > 1024*1048576 {
 		gb := average / 1024 / 1048576
@@ -74,7 +74,7 @@ func (model *FileIOModel) ioRateCaption(sum int) string {
 	}
 }
 
-func (model *FileIOModel) View() string {
+func (model *FileModel) View() string {
 	var ret string
 	ret += genericLabel.Render("File R/W IO estimates may be off by ~20%.") + "\n"
 	files := model.Proc.FDStat.FileTrace(model.Proc.TargetInfo.FDPath)

@@ -25,7 +25,7 @@ tracepoint:syscalls:sys_exit_read /pid == %d && @fd[tid]/ {if (args->ret > 0) {@
 tracepoint:syscalls:sys_enter_write /pid == %d/ {@fd[tid] = args->fd;}
 tracepoint:syscalls:sys_exit_write /pid == %d && @fd[tid]/ {if (args->ret > 0) {@write_fd[@fd[tid]] += args->ret;} delete(@fd[tid]);}
 	`, bpf.PID, bpf.PID, bpf.PID, bpf.PID)
-	cmd := exec.Command("/usr/bin/bpftrace", "-e", code, "-f", "json", "-c", "/usr/bin/sleep "+strconv.Itoa(durationSec))
+	cmd := exec.Command("bpftrace", "-e", code, "-f", "json", "-c", "/usr/bin/sleep "+strconv.Itoa(durationSec))
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, err
