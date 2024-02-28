@@ -55,14 +55,14 @@ func (model *MainModel) View() string {
 	model.ProcInfo.Mutex.RLock()
 	defer model.ProcInfo.Mutex.RUnlock()
 
-	overview := overviewModelStyle.Render(model.OverviewModel.View())
+	overview := model.OverviewModel.GetRegularStyle().Render(model.OverviewModel.View())
 	if model.FocusIndex == 0 {
-		overview = oocusedOverviewStyle.Render(model.OverviewModel.View())
+		overview = model.OverviewModel.GetFocusedStyle().Render(model.OverviewModel.View())
 	}
 
-	fileStats := fileStatsStyle.Render(model.FileStatsModel.View())
+	fileStats := model.FileStatsModel.GetRegularStyle().Render(model.FileStatsModel.View())
 	if model.FocusIndex == 1 {
-		fileStats = focusedFileStatsStyle.Render(model.FileStatsModel.View())
+		fileStats = model.FileStatsModel.GetFocusedStyle().Render(model.FileStatsModel.View())
 	}
 
 	return lipgloss.JoinHorizontal(lipgloss.Top, overview, fileStats)

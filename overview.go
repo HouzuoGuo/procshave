@@ -15,20 +15,13 @@ var (
 	overviewRunningTaskStyle  = lipgloss.NewStyle().Background(lipgloss.Color("#388e3c"))
 	overviewSleepingTaskStyle = lipgloss.NewStyle().Background(lipgloss.Color("#385170"))
 	overviewOtherTaskStyle    = lipgloss.NewStyle().Background(lipgloss.Color("#cd4439"))
-
-	overviewModelStyle = lipgloss.NewStyle().
-				Width(50).Height(12).Align(lipgloss.Left, lipgloss.Top).
-				BorderStyle(lipgloss.RoundedBorder())
-	oocusedOverviewStyle = lipgloss.NewStyle().Inherit(overviewModelStyle).
-				BorderStyle(lipgloss.RoundedBorder()).
-				BorderForeground(lipgloss.Color("228")).
-				BorderBackground(lipgloss.Color("63"))
 )
 
 type OverviewModel struct {
 	PID         int
 	RefreshRate time.Duration
 	Proc        *ProcInfo
+	TermWidth   int
 }
 
 func NewOverviewModel(pid int, procInfo *ProcInfo, refreshRate time.Duration) *OverviewModel {
@@ -49,6 +42,8 @@ func (model *OverviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case RefreshMessage:
 		model.Proc.Refresh()
 		return model, refreshAfter(model.RefreshRate)
+	case tea.WindowSizeMsg:
+		model.TermWidth = msg.Width
 	case tea.KeyMsg:
 		switch msg.String() {
 		case tea.KeyEnter.String():
@@ -56,6 +51,19 @@ func (model *OverviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return model, nil
+}
+
+func (model *OverviewModel) GetRegularStyle() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Width(model.TermWidth/2-2).Height(12).Align(lipgloss.Left, lipgloss.Top).
+		BorderStyle(lipgloss.RoundedBorder())
+}
+
+func (model *OverviewModel) GetFocusedStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Inherit(model.GetRegularStyle()).
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("228")).
+		BorderBackground(lipgloss.Color("63"))
 }
 
 func (model *OverviewModel) renderHierarchy() string {

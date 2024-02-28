@@ -1,10 +1,9 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"os/exec"
 	"sort"
 	"strconv"
@@ -21,14 +20,17 @@ type Bpftrace struct {
 
 func (bpf *Bpftrace) StartFileDescriptorIP(durationSec int) (*FDTrace, error) {
 	code := fmt.Sprintf(`
-		tracepoint:syscalls:sys_enter_write /pid == %d/ {@fd[tid] = args->fd; @write_fd[args->fd] += args->count;}
-		tracepoint:syscalls:sys_exit_write /pid == %d && @fd[tid]/ {@write_fd[@fd[tid]] += args->ret; delete(@fd[tid]);}
-	`, bpf.PID, bpf.PID)
+tracepoint:syscalls:sys_enter_read /pid == %d/ {@fd[tid] = args->fd;}
+tracepoint:syscalls:sys_exit_read /pid == %d && @fd[tid]/ {if (args->ret > 0) {@read_fd[@fd[tid]] += args->ret;} delete(@fd[tid]);}
+tracepoint:syscalls:sys_enter_write /pid == %d/ {@fd[tid] = args->fd;}
+tracepoint:syscalls:sys_exit_write /pid == %d && @fd[tid]/ {if (args->ret > 0) {@write_fd[@fd[tid]] += args->ret;} delete(@fd[tid]);}
+	`, bpf.PID, bpf.PID, bpf.PID, bpf.PID)
 	cmd := exec.Command("/usr/bin/bpftrace", "-e", code, "-f", "json", "-c", "/usr/bin/sleep "+strconv.Itoa(durationSec))
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, err
 	}
+	stdoutReader := bufio.NewReader(stdout)
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
@@ -36,16 +38,14 @@ func (bpf *Bpftrace) StartFileDescriptorIP(durationSec int) (*FDTrace, error) {
 		ReadBytesPerFD:    make(map[int]int),
 		WrittenBytesPerFD: make(map[int]int),
 	}
-	var rec FDTraceRecord
-	decoder := json.NewDecoder(stdout)
 	go func() {
 		for {
-			err := decoder.Decode(&rec)
-			if errors.Is(err, io.EOF) {
-				break
-			}
+			line, err := stdoutReader.ReadString('\n')
 			if err != nil {
-				// TODO FIXME: skip the first line which says: {"type": "attached_probes", "data": {"probes": 2}}
+				return
+			}
+			var rec FDTraceRecord
+			if err := json.Unmarshal([]byte(line), &rec); err != nil {
 				continue
 			}
 			if rec.Type == "map" && rec.Data != nil {

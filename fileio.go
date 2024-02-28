@@ -8,20 +8,11 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-var (
-	fileStatsStyle = lipgloss.NewStyle().
-			Width(50).Height(12).Align(lipgloss.Left, lipgloss.Top).
-			BorderStyle(lipgloss.RoundedBorder())
-	focusedFileStatsStyle = lipgloss.NewStyle().Inherit(fileStatsStyle).
-				BorderStyle(lipgloss.RoundedBorder()).
-				BorderForeground(lipgloss.Color("228")).
-				BorderBackground(lipgloss.Color("63"))
-)
-
 type FileIOModel struct {
 	PID                  int
 	BPFSampleIntervalSec int
 	Proc                 *ProcInfo
+	TermWidth            int
 }
 
 func NewFileStatsModel(pid int, procInfo *ProcInfo, bpfSampleIntervalSec int) *FileIOModel {
@@ -39,8 +30,23 @@ func (model *FileIOModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyEnter.String():
 			log.Printf("@@@@@ got enter")
 		}
+	case tea.WindowSizeMsg:
+		model.TermWidth = msg.Width
 	}
 	return model, nil
+}
+
+func (model *FileIOModel) GetRegularStyle() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Width(model.TermWidth/2-2).Height(12).Align(lipgloss.Left, lipgloss.Top).
+		BorderStyle(lipgloss.RoundedBorder())
+}
+
+func (model *FileIOModel) GetFocusedStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Inherit(model.GetRegularStyle()).
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("228")).
+		BorderBackground(lipgloss.Color("63"))
 }
 
 func (model *FileIOModel) ioRateCaption(sum int) string {
