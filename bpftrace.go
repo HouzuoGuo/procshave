@@ -21,8 +21,8 @@ type Bpftrace struct {
 
 func (bpf *Bpftrace) StartFileDescriptorIP(durationSec int) (*FDTrace, error) {
 	code := fmt.Sprintf(`
-		tracepoint:syscalls:sys_enter_write /pid == %d/ { @write_fd[args->fd] += args->count; }
-		tracepoint:syscalls:sys_enter_read /pid == %d/ { @read_fd[args->fd] += args->count; }
+		tracepoint:syscalls:sys_enter_write /pid == %d/ {@fd[tid] = args->fd; @write_fd[args->fd] += args->count;}
+		tracepoint:syscalls:sys_exit_write /pid == %d && @fd[tid]/ {@write_fd[@fd[tid]] += args->ret; delete(@fd[tid]);}
 	`, bpf.PID, bpf.PID)
 	cmd := exec.Command("/usr/bin/bpftrace", "-e", code, "-f", "json", "-c", "/usr/bin/sleep "+strconv.Itoa(durationSec))
 	stdout, err := cmd.StdoutPipe()

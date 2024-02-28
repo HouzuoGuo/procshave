@@ -12,9 +12,9 @@ import (
 
 var (
 	genericLabel              = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#38598b"))
-	overviewRunningTaskStyle  = lipgloss.NewStyle().Background(lipgloss.Color("#42b883"))
-	overviewSleepingTaskStyle = lipgloss.NewStyle().Background(lipgloss.Color("#0092ca"))
-	overviewOtherTaskStyle    = lipgloss.NewStyle().Background(lipgloss.Color("#fe4e6e"))
+	overviewRunningTaskStyle  = lipgloss.NewStyle().Background(lipgloss.Color("#388e3c"))
+	overviewSleepingTaskStyle = lipgloss.NewStyle().Background(lipgloss.Color("#385170"))
+	overviewOtherTaskStyle    = lipgloss.NewStyle().Background(lipgloss.Color("#cd4439"))
 
 	overviewModelStyle = lipgloss.NewStyle().
 				Width(50).Height(12).Align(lipgloss.Left, lipgloss.Top).

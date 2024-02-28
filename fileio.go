@@ -64,7 +64,7 @@ func (model *FileIOModel) ioRateCaption(sum int) string {
 		}
 		return fmt.Sprintf("%4dKB/s", kb)
 	} else {
-		return fmt.Sprintf("%4d B/s", average)
+		return fmt.Sprintf("%5dB/s", average)
 	}
 }
 
