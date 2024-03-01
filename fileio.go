@@ -9,14 +9,14 @@ import (
 )
 
 type FileModel struct {
-	PID                  int
-	BPFSampleIntervalSec int
-	Proc                 *ProcInfo
-	TermWidth            int
+	PID       int
+	BPF       *BpfTracer
+	Proc      *ProcInfo
+	TermWidth int
 }
 
-func NewFileModel(pid int, procInfo *ProcInfo, bpfSampleIntervalSec int) *FileModel {
-	return &FileModel{PID: pid, Proc: procInfo, BPFSampleIntervalSec: bpfSampleIntervalSec}
+func NewFileModel(pid int, procInfo *ProcInfo, bpf *BpfTracer) *FileModel {
+	return &FileModel{PID: pid, Proc: procInfo, BPF: bpf}
 }
 
 func (model *FileModel) Init() tea.Cmd {
@@ -50,7 +50,7 @@ func (model *FileModel) GetFocusedStyle() lipgloss.Style {
 }
 
 func (model *FileModel) ioRateCaption(sum int) string {
-	average := sum / model.BPFSampleIntervalSec
+	average := sum / model.BPF.SamplingIntervalSec
 	if average > 1024*1048576 {
 		gb := average / 1024 / 1048576
 		if gb == 0 {
@@ -76,10 +76,10 @@ func (model *FileModel) ioRateCaption(sum int) string {
 
 func (model *FileModel) View() string {
 	var ret string
-	ret += genericLabel.Render("File R/W IO estimates may be off by ~20%.") + "\n"
-	files := model.Proc.FDStat.FileTrace(model.Proc.TargetInfo.FDPath)
+	ret += genericLabel.Render("File IO activities") + "\n"
+	files := model.BPF.FileIOSummary(model.Proc.TargetInfo.FDPath)
 	if len(files.ByRate) == 0 {
-		ret += "No file activities."
+		ret += "Initialising..."
 		return ret
 	}
 	for _, file := range files.ByRate {

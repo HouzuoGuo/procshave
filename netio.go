@@ -6,14 +6,14 @@ import (
 )
 
 type NetModel struct {
-	PID                  int
-	BPFSampleIntervalSec int
-	Proc                 *ProcInfo
-	TermWidth            int
+	PID       int
+	BPF       *BpfTracer
+	Proc      *ProcInfo
+	TermWidth int
 }
 
-func NewNetModel(pid int, procInfo *ProcInfo, bpfSampleIntervalSec int) *NetModel {
-	return &NetModel{PID: pid, Proc: procInfo, BPFSampleIntervalSec: bpfSampleIntervalSec}
+func NewNetModel(pid int, procInfo *ProcInfo, bpf *BpfTracer) *NetModel {
+	return &NetModel{PID: pid, Proc: procInfo, BPF: bpf}
 }
 
 func (model *NetModel) Init() tea.Cmd {
@@ -43,6 +43,7 @@ func (model *NetModel) GetFocusedStyle() lipgloss.Style {
 
 func (model *NetModel) View() string {
 	var ret string
-	ret += "TODO: render network connection stats"
+	ret += genericLabel.Render("Network IO activities") + "\n"
+	ret += "Initialising..."
 	return ret
 }

@@ -23,6 +23,7 @@ type MainModel struct {
 	OverviewModel *OverviewModel
 	FileModel     *FileModel
 	NetModel      *NetModel
+	BpfTracer     *BpfTracer
 }
 
 func (model *MainModel) Init() tea.Cmd {

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"log"
 	"sync"
 	"time"
 
@@ -76,13 +75,12 @@ type ProcInfo struct {
 	GroupInfo    *ProcessInfo
 	ParentInfo   *ProcessInfo
 	TargetInfo   *ProcessInfo
-	FDStat       *FDTrace
 
 	Mutex *sync.RWMutex
 }
 
 func NewProcInfo(pid int, bpfSampleIntervalSec int) *ProcInfo {
-	ret := &ProcInfo{PID: pid, FDStat: &FDTrace{}, Mutex: new(sync.RWMutex)}
+	ret := &ProcInfo{PID: pid, Mutex: new(sync.RWMutex)}
 	fs, _ := procfs.NewDefaultFS()
 	stat, _ := fs.Stat()
 	ret.Uptime = time.Since(time.Unix(int64(stat.BootTime), 0))
@@ -92,19 +90,6 @@ func NewProcInfo(pid int, bpfSampleIntervalSec int) *ProcInfo {
 	ret.GroupInfo = NewProcessInfo(ret.TargetInfo.MainStat.PGRP)
 	ret.SessionInfo = NewProcessInfo(ret.TargetInfo.MainStat.Session)
 	ret.Refresh()
-	go func(pid int) {
-		for {
-			bpf := &Bpftrace{PID: pid}
-			fdstat, err := bpf.StartFileDescriptorIP(bpfSampleIntervalSec)
-			if err != nil {
-				log.Printf("@@@@@@@@ bpftrace err: %v", err)
-				break
-			}
-			ret.Mutex.Lock()
-			ret.FDStat = fdstat
-			ret.Mutex.Unlock()
-		}
-	}(pid)
 	return ret
 }
 
