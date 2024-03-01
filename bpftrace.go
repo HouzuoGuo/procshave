@@ -7,19 +7,19 @@ import (
 	"log"
 	"net"
 	"os/exec"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 )
 
-type BpfFDRecord struct {
+var (
+	TcpAddrPortKeyRegex = regexp.MustCompile(`\[([0-9,-]+)\],([0-9]+)`)
+)
+
+type BpfMapRecord struct {
 	Type string                    `json:"type"`
 	Data map[string]map[string]int `json:"data"`
-}
-
-type BpfNetIORecord struct {
-	Type string         `json:"type"`
-	Data map[string]int `json:"data"`
 }
 
 type BpfNetIOTrafficCounter struct {
@@ -28,36 +28,54 @@ type BpfNetIOTrafficCounter struct {
 	ByteCounter int
 }
 
-func (rec *BpfNetIORecord) GetEndpointTraffic() []BpfNetIOTrafficCounter {
+func TcpTrafficFromBpfMap(bpfMap map[string]int) []BpfNetIOTrafficCounter {
 	/*
-	  Sampple data:
-	  "[11,0,-72,3,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,-1,127,0,0,1,0,0,0,0],36344": 156,
-	  "[3,0,-80,-80,-64,-88,50,-60,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],40792": 185,
-	  "[5,0,9,-111,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0],2144": 422,
-	  "[5,0,-27,-50,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,-1,127,0,0,1,0,0,0,0],51824": 597,
+		Sample data for localhost communication:
+		{"type": "map", "data": {"@tcp_src": {"[10,0,0,11,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,-1,127,0,0,1,0,0,0,0],11": 0, "[2,0,-89,74,127,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],42826": 73, "[2,0,-89,66,127,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],42818": 73}}}
+		{"type": "map", "data": {"@tcp_dest": {"[10,0,-89,66,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,-1,127,0,0,1,0,0,0,0],42818": 0, "[10,0,-89,74,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,-1,127,0,0,1,0,0,0,0],42826": 0, "[2,0,0,11,127,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],11": 146}}}
 	*/
 	var ret []BpfNetIOTrafficCounter
-	for endpoint, trafficBytes := range rec.Data {
-		ipPort := strings.Split(endpoint, ",")
-		if len(ipPort) != 2 {
+	for addrPortKey, trafficBytes := range bpfMap {
+		addrPort := TcpAddrPortKeyRegex.FindStringSubmatch(addrPortKey)
+		if len(addrPort) != 3 {
 			continue
 		}
-		ipStr, portStr := strings.TrimSuffix(strings.TrimPrefix(ipPort[0], "["), "]"), ipPort[1]
-		port, _ := strconv.Atoi(portStr)
-
+		sockAddrIn6Str := addrPort[1]
+		port, _ := strconv.Atoi(addrPort[2])
+		var sockAddrIn6 []byte
+		for _, byteStr := range strings.Split(sockAddrIn6Str, ",") {
+			byteVal, _ := strconv.Atoi(strings.TrimSpace(byteStr))
+			sockAddrIn6 = append(sockAddrIn6, byte(byteVal))
+		}
+		if len(sockAddrIn6) != 28 {
+			continue
+		}
+		var ipAddr net.IP
+		switch sockAddrIn6[0] {
+		case 2:
+			ipAddr = net.IP(sockAddrIn6[4 : 4+4])
+		case 10:
+			ipAddr = net.IP(sockAddrIn6[4 : 4+16])
+		default:
+			continue
+		}
 		ret = append(ret, BpfNetIOTrafficCounter{
-			IP:          []byte{},
+			IP:          ipAddr,
 			Port:        port,
 			ByteCounter: trafficBytes,
 		})
+
 	}
+	return ret
 }
 
 type BpfTracer struct {
-	PID                 int
-	SamplingIntervalSec int
-	FDBytesRead         map[int]int
-	FDBytesWritten      map[int]int
+	PID                    int
+	SamplingIntervalSec    int
+	FDBytesRead            map[int]int
+	FDBytesWritten         map[int]int
+	TcpTrafficSources      []BpfNetIOTrafficCounter
+	TcpTrafficDestinations []BpfNetIOTrafficCounter
 }
 
 func NewBpfTracer(pid int, samplingIntervalSec int) *BpfTracer {
@@ -125,7 +143,7 @@ interval:s:%d {
 			if err != nil {
 				return
 			}
-			var rec BpfFDRecord
+			var rec BpfMapRecord
 			if err := json.Unmarshal([]byte(line), &rec); err != nil {
 				continue
 			}
@@ -146,6 +164,10 @@ interval:s:%d {
 						}
 						bpf.FDBytesWritten[fdNumber] = count
 					}
+				} else if tcpSrc := rec.Data["@tcp_src"]; tcpSrc != nil {
+					bpf.TcpTrafficSources = TcpTrafficFromBpfMap(tcpSrc)
+				} else if tcpDest := rec.Data["@tcp_dest"]; tcpDest != nil {
+					bpf.TcpTrafficDestinations = TcpTrafficFromBpfMap(tcpDest)
 				}
 			}
 		}
