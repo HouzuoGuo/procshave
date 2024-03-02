@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 var (
@@ -26,9 +27,10 @@ type BpfNetIOTrafficCounter struct {
 	IP          net.IP
 	Port        int
 	ByteCounter int
+	IsDest      bool
 }
 
-func TcpTrafficFromBpfMap(bpfMap map[string]int) []BpfNetIOTrafficCounter {
+func TcpTrafficFromBpfMap(bpfMap map[string]int, isDest bool) []BpfNetIOTrafficCounter {
 	/*
 		Sample data for localhost communication:
 		{"type": "map", "data": {"@tcp_src": {"[10,0,0,11,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,-1,127,0,0,1,0,0,0,0],11": 0, "[2,0,-89,74,127,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],42826": 73, "[2,0,-89,66,127,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],42818": 73}}}
@@ -63,13 +65,18 @@ func TcpTrafficFromBpfMap(bpfMap map[string]int) []BpfNetIOTrafficCounter {
 			IP:          ipAddr,
 			Port:        port,
 			ByteCounter: trafficBytes,
+			IsDest:      isDest,
 		})
 
 	}
+	sort.Slice(ret, func(i, j int) bool {
+		return ret[i].ByteCounter > ret[j].ByteCounter
+	})
 	return ret
 }
 
 type BpfTracer struct {
+	mutex                  *sync.Mutex
 	PID                    int
 	SamplingIntervalSec    int
 	FDBytesRead            map[int]int
@@ -80,6 +87,7 @@ type BpfTracer struct {
 
 func NewBpfTracer(pid int, samplingIntervalSec int) *BpfTracer {
 	return &BpfTracer{
+		mutex:               new(sync.Mutex),
 		PID:                 pid,
 		SamplingIntervalSec: samplingIntervalSec,
 		FDBytesRead:         make(map[int]int),
@@ -88,8 +96,6 @@ func NewBpfTracer(pid int, samplingIntervalSec int) *BpfTracer {
 }
 
 func (bpf *BpfTracer) Start() error {
-	bpf.FDBytesRead = make(map[int]int)
-	bpf.FDBytesWritten = make(map[int]int)
 	code := fmt.Sprintf(`
 tracepoint:syscalls:sys_enter_read /pid == %d/ {
 	@fd[tid] = args->fd;
@@ -154,7 +160,9 @@ interval:s:%d {
 						if err != nil {
 							break
 						}
+						bpf.mutex.Lock()
 						bpf.FDBytesRead[fdNumber] = count
+						bpf.mutex.Unlock()
 					}
 				} else if written := rec.Data["@write_fd"]; written != nil {
 					for fd, count := range written {
@@ -162,12 +170,18 @@ interval:s:%d {
 						if err != nil {
 							break
 						}
+						bpf.mutex.Lock()
 						bpf.FDBytesWritten[fdNumber] = count
+						bpf.mutex.Unlock()
 					}
 				} else if tcpSrc := rec.Data["@tcp_src"]; tcpSrc != nil {
-					bpf.TcpTrafficSources = TcpTrafficFromBpfMap(tcpSrc)
+					bpf.mutex.Lock()
+					bpf.TcpTrafficSources = TcpTrafficFromBpfMap(tcpSrc, false)
+					bpf.mutex.Unlock()
 				} else if tcpDest := rec.Data["@tcp_dest"]; tcpDest != nil {
-					bpf.TcpTrafficDestinations = TcpTrafficFromBpfMap(tcpDest)
+					bpf.mutex.Lock()
+					bpf.TcpTrafficDestinations = TcpTrafficFromBpfMap(tcpDest, true)
+					bpf.mutex.Unlock()
 				}
 			}
 		}

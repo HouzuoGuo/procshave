@@ -38,40 +38,14 @@ func (model *FileModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (model *FileModel) GetRegularStyle() lipgloss.Style {
 	return lipgloss.NewStyle().
-		Width(model.TermWidth/2-2).Height(12).Align(lipgloss.Left, lipgloss.Top).
+		Width(model.TermWidth/2-2).Height(14).Align(lipgloss.Left, lipgloss.Top).
 		BorderStyle(lipgloss.RoundedBorder())
 }
 
 func (model *FileModel) GetFocusedStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Inherit(model.GetRegularStyle()).
-		BorderStyle(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("228")).
-		BorderBackground(lipgloss.Color("63"))
-}
-
-func (model *FileModel) ioRateCaption(sum int) string {
-	average := sum / model.BPF.SamplingIntervalSec
-	if average > 1024*1048576 {
-		gb := average / 1024 / 1048576
-		if gb == 0 {
-			gb = 1
-		}
-		return fmt.Sprintf("%4dGB/s", gb)
-	} else if average > 1048576 {
-		mb := average / 1048576
-		if mb == 0 {
-			mb = 1
-		}
-		return fmt.Sprintf("%4dMB/s", mb)
-	} else if average > 1024 {
-		kb := average / 1024
-		if kb == 0 {
-			kb = 1
-		}
-		return fmt.Sprintf("%4dKB/s", kb)
-	} else {
-		return fmt.Sprintf("%5dB/s", average)
-	}
+		BorderForeground(lipgloss.Color(FocusedBorderForeground)).
+		BorderBackground(lipgloss.Color(FocusedBorderBackground))
 }
 
 func (model *FileModel) View() string {
@@ -79,11 +53,17 @@ func (model *FileModel) View() string {
 	ret += genericLabel.Render("File IO activities") + "\n"
 	files := model.BPF.FileIOSummary(model.Proc.TargetInfo.FDPath)
 	if len(files.ByRate) == 0 {
-		ret += "Initialising..."
+		ret += "No activities yet."
 		return ret
 	}
-	for _, file := range files.ByRate {
-		ret += fmt.Sprintf("%s R %s W - %s\n", model.ioRateCaption(file.ReadBytes), model.ioRateCaption(file.WrittenBytes), file.Name)
+	for i, file := range files.ByRate {
+		ret += fmt.Sprintf("%s R %s W - %s\n",
+			IORateCaption(file.ReadBytes/model.BPF.SamplingIntervalSec),
+			IORateCaption(file.WrittenBytes/model.BPF.SamplingIntervalSec),
+			file.Name)
+		if i > 12 {
+			break
+		}
 	}
 	return ret
 }

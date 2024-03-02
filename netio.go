@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -30,20 +32,35 @@ func (model *NetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (model *NetModel) GetRegularStyle() lipgloss.Style {
 	return lipgloss.NewStyle().
-		Width(model.TermWidth/2-2).Height(12).Align(lipgloss.Left, lipgloss.Top).
+		Width(model.TermWidth/2-2).Height(14).Align(lipgloss.Left, lipgloss.Top).
 		BorderStyle(lipgloss.RoundedBorder())
 }
 
 func (model *NetModel) GetFocusedStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Inherit(model.GetRegularStyle()).
-		BorderStyle(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("228")).
-		BorderBackground(lipgloss.Color("63"))
+		BorderForeground(lipgloss.Color(FocusedBorderForeground)).
+		BorderBackground(lipgloss.Color(FocusedBorderBackground))
 }
 
 func (model *NetModel) View() string {
 	var ret string
-	ret += genericLabel.Render("Network IO activities") + "\n"
-	ret += "Initialising..."
+	ret += genericLabel.Render("Network IO activities - received") + "\n"
+	if len(model.BPF.TcpTrafficDestinations)+len(model.BPF.TcpTrafficSources) == 0 {
+		ret += "No activities yet.\n"
+		return ret
+	}
+	for i, counter := range model.BPF.TcpTrafficSources {
+		ret += fmt.Sprintf("%-39s %-5d %s\n", counter.IP, counter.Port, IORateCaption(counter.ByteCounter/model.BPF.SamplingIntervalSec))
+		if i > 6 {
+			break
+		}
+	}
+	ret += genericLabel.Render("Network IO activities - sent") + "\n"
+	for i, counter := range model.BPF.TcpTrafficDestinations {
+		ret += fmt.Sprintf("%-39s %-5d %s\n", counter.IP, counter.Port, IORateCaption(counter.ByteCounter/model.BPF.SamplingIntervalSec))
+		if i > 6 {
+			break
+		}
+	}
 	return ret
 }

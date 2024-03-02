@@ -55,15 +55,14 @@ func (model *OverviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (model *OverviewModel) GetRegularStyle() lipgloss.Style {
 	return lipgloss.NewStyle().
-		Width(model.TermWidth/2-2).Height(12).Align(lipgloss.Left, lipgloss.Top).
+		Width(model.TermWidth/2-2).Height(14).Align(lipgloss.Left, lipgloss.Top).
 		BorderStyle(lipgloss.RoundedBorder())
 }
 
 func (model *OverviewModel) GetFocusedStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Inherit(model.GetRegularStyle()).
-		BorderStyle(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("228")).
-		BorderBackground(lipgloss.Color("63"))
+		BorderForeground(lipgloss.Color(FocusedBorderForeground)).
+		BorderBackground(lipgloss.Color(FocusedBorderBackground))
 }
 
 func (model *OverviewModel) renderHierarchy() string {

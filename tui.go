@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -11,10 +12,39 @@ const (
 	MaxPanel = 3
 )
 
+var (
+	FocusedBorderForeground = lipgloss.Color("228")
+	FocusedBorderBackground = lipgloss.Color("63")
+)
+
 type RefreshMessage time.Time
 
 func refreshAfter(interval time.Duration) tea.Cmd {
 	return tea.Tick(interval, func(t time.Time) tea.Msg { return RefreshMessage(t) })
+}
+
+func IORateCaption(rate int) string {
+	if rate > 1024*1048576 {
+		gb := rate / 1024 / 1048576
+		if gb == 0 {
+			gb = 1
+		}
+		return fmt.Sprintf("%4dGB/s", gb)
+	} else if rate > 1048576 {
+		mb := rate / 1048576
+		if mb == 0 {
+			mb = 1
+		}
+		return fmt.Sprintf("%4dMB/s", mb)
+	} else if rate > 1024 {
+		kb := rate / 1024
+		if kb == 0 {
+			kb = 1
+		}
+		return fmt.Sprintf("%4dKB/s", kb)
+	} else {
+		return fmt.Sprintf("%5dB/s", rate)
+	}
 }
 
 type MainModel struct {
@@ -44,13 +74,14 @@ func (model *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyShiftTab.String():
 			model.FocusIndex--
 			if model.FocusIndex == -1 {
-				model.FocusIndex = 0
+				model.FocusIndex = MaxPanel - 1
 			}
 		}
 	}
 	_, overviewUpdate := model.OverviewModel.Update(msg)
-	_, fileStatsUpdate := model.FileModel.Update(msg)
-	return model, tea.Batch(overviewUpdate, fileStatsUpdate)
+	_, fileUpdate := model.FileModel.Update(msg)
+	_, netUpdate := model.NetModel.Update(msg)
+	return model, tea.Batch(overviewUpdate, fileUpdate, netUpdate)
 }
 
 func (model *MainModel) View() string {
@@ -73,7 +104,7 @@ func (model *MainModel) View() string {
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Top,
-		lipgloss.JoinHorizontal(lipgloss.Left, overview, fileStats, netStats),
+		lipgloss.JoinHorizontal(lipgloss.Left, overview, fileStats),
 		lipgloss.JoinHorizontal(lipgloss.Left, netStats),
 	)
 }
