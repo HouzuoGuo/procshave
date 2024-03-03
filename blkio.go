@@ -61,11 +61,10 @@ func (model *BlkdevModel) View() string {
 		if i == 12 {
 			break
 		}
-		sectors := fmt.Sprintf("%d sectors/s", blkdev.SectorCount/model.BPF.SamplingIntervalSec)
-		ret += fmt.Sprintf("%-27s %-12s in %s",
-			PathCaption(blkdev.DeviceName, 25),
-			sectors,
+		sectors := fmt.Sprintf("%d sectors(%s)",
+			blkdev.SectorCount/model.BPF.SamplingIntervalSec,
 			(blkdev.IODuration / time.Duration(model.BPF.SamplingIntervalSec)).Round(1*time.Millisecond))
+		ret += fmt.Sprintf("%-26s %-18s /s", PathCaption(blkdev.DeviceName, 25), sectors)
 	}
 	return ret
 }

@@ -60,7 +60,7 @@ func (model *FileModel) View() string {
 		if i == 12 {
 			break
 		}
-		ret += fmt.Sprintf("%-27s R %-7s W %-7s\n",
+		ret += fmt.Sprintf("%-27s R %-8s W %-8s\n",
 			PathCaption(file.Name, 25),
 			IORateCaption(file.ReadBytes/model.BPF.SamplingIntervalSec),
 			IORateCaption(file.WrittenBytes/model.BPF.SamplingIntervalSec))
