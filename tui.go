@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -9,7 +10,7 @@ import (
 )
 
 const (
-	MaxPanel = 3
+	MaxPanel = 4
 )
 
 var (
@@ -23,27 +24,38 @@ func refreshAfter(interval time.Duration) tea.Cmd {
 	return tea.Tick(interval, func(t time.Time) tea.Msg { return RefreshMessage(t) })
 }
 
+func PathCaption(fullPath string, maxLength int) string {
+	fullPath = strings.TrimSpace(fullPath)
+	if len(fullPath) <= maxLength {
+		return fullPath
+	}
+	half := maxLength/2 - 2
+	firstHalf := fullPath[:half]
+	secondHalf := fullPath[len(fullPath)-half:]
+	return fmt.Sprintf("%s..%s", firstHalf, secondHalf)
+}
+
 func IORateCaption(rate int) string {
 	if rate > 1024*1048576 {
 		gb := rate / 1024 / 1048576
 		if gb == 0 {
 			gb = 1
 		}
-		return fmt.Sprintf("%4dGB/s", gb)
+		return fmt.Sprintf("%dGB/s", gb)
 	} else if rate > 1048576 {
 		mb := rate / 1048576
 		if mb == 0 {
 			mb = 1
 		}
-		return fmt.Sprintf("%4dMB/s", mb)
+		return fmt.Sprintf("%dMB/s", mb)
 	} else if rate > 1024 {
 		kb := rate / 1024
 		if kb == 0 {
 			kb = 1
 		}
-		return fmt.Sprintf("%4dKB/s", kb)
+		return fmt.Sprintf("%dKB/s", kb)
 	} else {
-		return fmt.Sprintf("%5dB/s", rate)
+		return fmt.Sprintf("%dB/s", rate)
 	}
 }
 
@@ -53,6 +65,7 @@ type MainModel struct {
 	OverviewModel *OverviewModel
 	FileModel     *FileModel
 	NetModel      *NetModel
+	BlkdevModel   *BlkdevModel
 	BpfTracer     *BpfTracer
 }
 
@@ -81,7 +94,8 @@ func (model *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	_, overviewUpdate := model.OverviewModel.Update(msg)
 	_, fileUpdate := model.FileModel.Update(msg)
 	_, netUpdate := model.NetModel.Update(msg)
-	return model, tea.Batch(overviewUpdate, fileUpdate, netUpdate)
+	_, blkdevUpdate := model.BlkdevModel.Update(msg)
+	return model, tea.Batch(overviewUpdate, fileUpdate, netUpdate, blkdevUpdate)
 }
 
 func (model *MainModel) View() string {
@@ -92,19 +106,21 @@ func (model *MainModel) View() string {
 	if model.FocusIndex == 0 {
 		overview = model.OverviewModel.GetFocusedStyle().Render(model.OverviewModel.View())
 	}
-
 	fileStats := model.FileModel.GetRegularStyle().Render(model.FileModel.View())
 	if model.FocusIndex == 1 {
 		fileStats = model.FileModel.GetFocusedStyle().Render(model.FileModel.View())
 	}
-
 	netStats := model.NetModel.GetRegularStyle().Render(model.NetModel.View())
 	if model.FocusIndex == 2 {
 		netStats = model.NetModel.GetFocusedStyle().Render(model.NetModel.View())
 	}
+	blkdevStats := model.BlkdevModel.GetRegularStyle().Render(model.BlkdevModel.View())
+	if model.FocusIndex == 3 {
+		blkdevStats = model.BlkdevModel.GetFocusedStyle().Render(model.BlkdevModel.View())
+	}
 
 	return lipgloss.JoinVertical(lipgloss.Top,
 		lipgloss.JoinHorizontal(lipgloss.Left, overview, fileStats),
-		lipgloss.JoinHorizontal(lipgloss.Left, netStats),
+		lipgloss.JoinHorizontal(lipgloss.Left, netStats, blkdevStats),
 	)
 }

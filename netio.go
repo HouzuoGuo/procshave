@@ -32,7 +32,7 @@ func (model *NetModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (model *NetModel) GetRegularStyle() lipgloss.Style {
 	return lipgloss.NewStyle().
-		Width(model.TermWidth/2-2).Height(14).Align(lipgloss.Left, lipgloss.Top).
+		Width(model.TermWidth/2-2).Height(15).Align(lipgloss.Left, lipgloss.Top).
 		BorderStyle(lipgloss.RoundedBorder())
 }
 
@@ -44,23 +44,23 @@ func (model *NetModel) GetFocusedStyle() lipgloss.Style {
 
 func (model *NetModel) View() string {
 	var ret string
-	ret += genericLabel.Render("Network IO activities - received") + "\n"
+	ret += genericLabel.Render("TCP activities - incoming") + "\n"
 	if len(model.BPF.TcpTrafficDestinations)+len(model.BPF.TcpTrafficSources) == 0 {
-		ret += "No activities yet.\n"
+		ret += "No data yet.\n"
 		return ret
 	}
-	for i, counter := range model.BPF.TcpTrafficSources {
-		ret += fmt.Sprintf("%-39s %-5d %s\n", counter.IP, counter.Port, IORateCaption(counter.ByteCounter/model.BPF.SamplingIntervalSec))
-		if i > 6 {
-			break
-		}
-	}
-	ret += genericLabel.Render("Network IO activities - sent") + "\n"
 	for i, counter := range model.BPF.TcpTrafficDestinations {
-		ret += fmt.Sprintf("%-39s %-5d %s\n", counter.IP, counter.Port, IORateCaption(counter.ByteCounter/model.BPF.SamplingIntervalSec))
-		if i > 6 {
+		if i == 6 {
 			break
 		}
+		ret += fmt.Sprintf("%-39s %-5d %s\n", counter.IP, counter.Port, IORateCaption(counter.ByteCounter/model.BPF.SamplingIntervalSec))
+	}
+	ret += genericLabel.Render("TCP activities - outgoing") + "\n"
+	for i, counter := range model.BPF.TcpTrafficSources {
+		if i == 6 {
+			break
+		}
+		ret += fmt.Sprintf("%-39s %-5d %s\n", counter.IP, counter.Port, IORateCaption(counter.ByteCounter/model.BPF.SamplingIntervalSec))
 	}
 	return ret
 }

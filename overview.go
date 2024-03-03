@@ -55,7 +55,7 @@ func (model *OverviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (model *OverviewModel) GetRegularStyle() lipgloss.Style {
 	return lipgloss.NewStyle().
-		Width(model.TermWidth/2-2).Height(14).Align(lipgloss.Left, lipgloss.Top).
+		Width(model.TermWidth/2-2).Height(15).Align(lipgloss.Left, lipgloss.Top).
 		BorderStyle(lipgloss.RoundedBorder())
 }
 

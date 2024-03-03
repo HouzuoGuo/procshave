@@ -12,6 +12,9 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
+
+	"github.com/prometheus/procfs/blockdevice"
 )
 
 var (
@@ -79,19 +82,23 @@ type BpfTracer struct {
 	mutex                  *sync.Mutex
 	PID                    int
 	SamplingIntervalSec    int
-	FDBytesRead            map[int]int
-	FDBytesWritten         map[int]int
+	FDBytesRead            map[string]int
+	FDBytesWritten         map[string]int
 	TcpTrafficSources      []BpfNetIOTrafficCounter
 	TcpTrafficDestinations []BpfNetIOTrafficCounter
+	BlockDeviceIONanos     map[string]int
+	BlockDeviceIOSectors   map[string]int
 }
 
 func NewBpfTracer(pid int, samplingIntervalSec int) *BpfTracer {
 	return &BpfTracer{
-		mutex:               new(sync.Mutex),
-		PID:                 pid,
-		SamplingIntervalSec: samplingIntervalSec,
-		FDBytesRead:         make(map[int]int),
-		FDBytesWritten:      make(map[int]int),
+		mutex:                new(sync.Mutex),
+		PID:                  pid,
+		SamplingIntervalSec:  samplingIntervalSec,
+		FDBytesRead:          make(map[string]int),
+		FDBytesWritten:       make(map[string]int),
+		BlockDeviceIONanos:   make(map[string]int),
+		BlockDeviceIOSectors: make(map[string]int),
 	}
 }
 
@@ -111,15 +118,27 @@ tracepoint:syscalls:sys_exit_write /pid == %d && @fd[tid]/ {
     if (args->ret > 0) {@write_fd[@fd[tid]] += args->ret;}
     delete(@fd[tid]);
 }
-tracepoint:tcp:tcp_probe {
+tracepoint:tcp:tcp_probe /pid == %d/ {
     @tcp_src[args->saddr, args->sport] += args->data_len;
     @tcp_dest[args->daddr, args->dport] += args->data_len;
 }
-interval:s:%d {
-    print(@read_fd); print(@write_fd); print(@tcp_src); print(@tcp_dest);
-    clear(@read_fd); clear(@write_fd); clear(@tcp_src); clear(@tcp_dest);
+tracepoint:block:block_io_start /pid == %d/ {
+    @blkdev_sector_count[args->dev]=count();
+    @blkdev_req[args->sector]=nsecs;
 }
-	`, bpf.PID, bpf.PID, bpf.PID, bpf.PID, bpf.SamplingIntervalSec)
+tracepoint:block:block_io_done /@blkdev_req[args->sector] != 0/ {
+    @blkdev_dur[args->dev] += nsecs - @blkdev_req[args->sector];
+    delete(@blkdev_req[args->sector]);
+}
+interval:s:%d {
+    print(@read_fd); print(@write_fd);
+    print(@tcp_src); print(@tcp_dest);
+    print(@blkdev_dur); print(@blkdev_sector_count);
+    clear(@read_fd); clear(@write_fd);
+    clear(@tcp_src); clear(@tcp_dest);
+    clear(@blkdev_dur); clear(@blkdev_sector_count);
+}
+	`, bpf.PID, bpf.PID, bpf.PID, bpf.PID, bpf.PID, bpf.PID, bpf.SamplingIntervalSec)
 	cmd := exec.Command("bpftrace", "-e", code, "-f", "json")
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -149,31 +168,20 @@ interval:s:%d {
 			if err != nil {
 				return
 			}
+			log.Printf("bpftrace stdout: %s", line)
 			var rec BpfMapRecord
 			if err := json.Unmarshal([]byte(line), &rec); err != nil {
 				continue
 			}
 			if rec.Type == "map" && rec.Data != nil {
 				if read := rec.Data["@read_fd"]; read != nil {
-					for fd, count := range read {
-						fdNumber, err := strconv.Atoi(fd)
-						if err != nil {
-							break
-						}
-						bpf.mutex.Lock()
-						bpf.FDBytesRead[fdNumber] = count
-						bpf.mutex.Unlock()
-					}
+					bpf.mutex.Lock()
+					bpf.FDBytesRead = read
+					bpf.mutex.Unlock()
 				} else if written := rec.Data["@write_fd"]; written != nil {
-					for fd, count := range written {
-						fdNumber, err := strconv.Atoi(fd)
-						if err != nil {
-							break
-						}
-						bpf.mutex.Lock()
-						bpf.FDBytesWritten[fdNumber] = count
-						bpf.mutex.Unlock()
-					}
+					bpf.mutex.Lock()
+					bpf.FDBytesWritten = written
+					bpf.mutex.Unlock()
 				} else if tcpSrc := rec.Data["@tcp_src"]; tcpSrc != nil {
 					bpf.mutex.Lock()
 					bpf.TcpTrafficSources = TcpTrafficFromBpfMap(tcpSrc, false)
@@ -181,6 +189,14 @@ interval:s:%d {
 				} else if tcpDest := rec.Data["@tcp_dest"]; tcpDest != nil {
 					bpf.mutex.Lock()
 					bpf.TcpTrafficDestinations = TcpTrafficFromBpfMap(tcpDest, true)
+					bpf.mutex.Unlock()
+				} else if duration := rec.Data["@blkdev_dur"]; duration != nil {
+					bpf.mutex.Lock()
+					bpf.BlockDeviceIONanos = duration
+					bpf.mutex.Unlock()
+				} else if sectors := rec.Data["@blkdev_sector_count"]; sectors != nil {
+					bpf.mutex.Lock()
+					bpf.BlockDeviceIOSectors = sectors
 					bpf.mutex.Unlock()
 				}
 			}
@@ -205,7 +221,8 @@ func (bpf *BpfTracer) FileIOSummary(fdPaths map[int]string) *FileIOSummary {
 		ByRate: []*FileIOCounter{},
 	}
 	for fd, read := range bpf.FDBytesRead {
-		fileName, exists := fdPaths[fd]
+		fdNum, _ := strconv.Atoi(fd)
+		fileName, exists := fdPaths[fdNum]
 		if !exists {
 			continue
 		}
@@ -215,7 +232,8 @@ func (bpf *BpfTracer) FileIOSummary(fdPaths map[int]string) *FileIOSummary {
 		ret.ByName[fileName].ReadBytes = read
 	}
 	for fd, written := range bpf.FDBytesWritten {
-		fileName, exists := fdPaths[fd]
+		fdNum, _ := strconv.Atoi(fd)
+		fileName, exists := fdPaths[fdNum]
 		if !exists {
 			continue
 		}
@@ -232,6 +250,71 @@ func (bpf *BpfTracer) FileIOSummary(fdPaths map[int]string) *FileIOSummary {
 		a := ret.ByRate[i]
 		b := ret.ByRate[j]
 		return a.ReadBytes+a.WrittenBytes > b.ReadBytes+b.WrittenBytes
+	})
+	return ret
+}
+
+type BlockIOCounter struct {
+	DeviceName  string
+	MajorMinor  string
+	SectorCount int
+	IODuration  time.Duration
+}
+
+type BlockIOSummary struct {
+	ByName     map[string]*BlockIOCounter
+	ByDuration []*BlockIOCounter
+}
+
+func devtMajorMinor(devt int) (int, int) {
+	/*
+	   dev_t example:
+	   {"type": "map", "data": {"@blkdev_dur": {"8388608": 5888654}}}
+	   {"type": "map", "data": {"@blkdev_sector_count": {"8388608": 11}}}
+	*/
+	return devt >> 20, (devt >> 8) & 0x7f
+}
+
+func (bpf *BpfTracer) BlockIOSummary(diskStats map[string]blockdevice.Diskstats) *BlockIOSummary {
+	ret := &BlockIOSummary{
+		ByName:     make(map[string]*BlockIOCounter),
+		ByDuration: []*BlockIOCounter{},
+	}
+	for devt, duration := range bpf.BlockDeviceIONanos {
+		devtNum, _ := strconv.Atoi(devt)
+		major, minor := devtMajorMinor(devtNum)
+		majorMinor := fmt.Sprintf("%d:%d", major, minor)
+		disk, exists := diskStats[majorMinor]
+		if !exists {
+			continue
+		}
+		if _, exists := ret.ByName[disk.DeviceName]; !exists {
+			ret.ByName[disk.DeviceName] = &BlockIOCounter{
+				DeviceName: disk.DeviceName,
+				MajorMinor: majorMinor,
+				IODuration: time.Duration(duration) * time.Nanosecond,
+			}
+		}
+	}
+	for devt, sectors := range bpf.BlockDeviceIOSectors {
+		devtNum, _ := strconv.Atoi(devt)
+		major, minor := devtMajorMinor(devtNum)
+		majorMinor := fmt.Sprintf("%d:%d", major, minor)
+		disk, exists := diskStats[majorMinor]
+		if !exists {
+			continue
+		}
+		if ioCounter, exists := ret.ByName[disk.DeviceName]; exists {
+			ioCounter.SectorCount = sectors
+		}
+	}
+	for _, ioCounter := range ret.ByName {
+		ret.ByDuration = append(ret.ByDuration, ioCounter)
+	}
+	sort.Slice(ret.ByDuration, func(i, j int) bool {
+		a := ret.ByDuration[i]
+		b := ret.ByDuration[j]
+		return a.IODuration > b.IODuration
 	})
 	return ret
 }

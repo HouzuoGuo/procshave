@@ -1,10 +1,12 @@
 package main
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
 	"github.com/prometheus/procfs"
+	"github.com/prometheus/procfs/blockdevice"
 	"github.com/tklauser/go-sysconf"
 )
 
@@ -75,6 +77,7 @@ type ProcInfo struct {
 	GroupInfo    *ProcessInfo
 	ParentInfo   *ProcessInfo
 	TargetInfo   *ProcessInfo
+	DiskStats    map[string]blockdevice.Diskstats
 
 	Mutex *sync.RWMutex
 }
@@ -93,15 +96,22 @@ func NewProcInfo(pid int, bpfSampleIntervalSec int) *ProcInfo {
 	return ret
 }
 
-func (overview *ProcInfo) Refresh() {
-	overview.Mutex.Lock()
-	defer overview.Mutex.Unlock()
+func (info *ProcInfo) Refresh() {
+	info.Mutex.Lock()
+	defer info.Mutex.Unlock()
 	fs, _ := procfs.NewDefaultFS()
 	stat, _ := fs.Stat()
-	overview.Uptime = time.Since(time.Unix(int64(stat.BootTime), 0))
-	overview.TargetInfo.Refresh()
-	overview.ParentInfo.Refresh()
-	overview.TTYGroupInfo.Refresh()
-	overview.GroupInfo.Refresh()
-	overview.SessionInfo.Refresh()
+	info.Uptime = time.Since(time.Unix(int64(stat.BootTime), 0))
+	info.TargetInfo.Refresh()
+	info.ParentInfo.Refresh()
+	info.TTYGroupInfo.Refresh()
+	info.GroupInfo.Refresh()
+	info.SessionInfo.Refresh()
+
+	blockdev, _ := blockdevice.NewDefaultFS()
+	diskStats, _ := blockdev.ProcDiskstats()
+	info.DiskStats = make(map[string]blockdevice.Diskstats)
+	for _, disk := range diskStats {
+		info.DiskStats[fmt.Sprintf("%d:%d", disk.MajorNumber, disk.MinorNumber)] = disk
+	}
 }

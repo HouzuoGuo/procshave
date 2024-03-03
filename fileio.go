@@ -38,7 +38,7 @@ func (model *FileModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (model *FileModel) GetRegularStyle() lipgloss.Style {
 	return lipgloss.NewStyle().
-		Width(model.TermWidth/2-2).Height(14).Align(lipgloss.Left, lipgloss.Top).
+		Width(model.TermWidth/2-2).Height(15).Align(lipgloss.Left, lipgloss.Top).
 		BorderStyle(lipgloss.RoundedBorder())
 }
 
@@ -53,17 +53,17 @@ func (model *FileModel) View() string {
 	ret += genericLabel.Render("File IO activities") + "\n"
 	files := model.BPF.FileIOSummary(model.Proc.TargetInfo.FDPath)
 	if len(files.ByRate) == 0 {
-		ret += "No activities yet."
+		ret += "No data yet."
 		return ret
 	}
 	for i, file := range files.ByRate {
-		ret += fmt.Sprintf("%s R %s W - %s\n",
-			IORateCaption(file.ReadBytes/model.BPF.SamplingIntervalSec),
-			IORateCaption(file.WrittenBytes/model.BPF.SamplingIntervalSec),
-			file.Name)
-		if i > 12 {
+		if i == 12 {
 			break
 		}
+		ret += fmt.Sprintf("%-27s R %-7s W %-7s\n",
+			PathCaption(file.Name, 25),
+			IORateCaption(file.ReadBytes/model.BPF.SamplingIntervalSec),
+			IORateCaption(file.WrittenBytes/model.BPF.SamplingIntervalSec))
 	}
 	return ret
 }

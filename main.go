@@ -25,6 +25,7 @@ func main() {
 		OverviewModel: NewOverviewModel(pid, procInfo, 1*time.Second),
 		FileModel:     NewFileModel(pid, procInfo, bpf),
 		NetModel:      NewNetModel(pid, procInfo, bpf),
+		BlkdevModel:   NewBlkdevModel(pid, procInfo, bpf),
 	}
 
 	go func() {
