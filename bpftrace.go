@@ -126,8 +126,8 @@ tracepoint:tcp:tcp_probe /pid == %d/ {
     @tcp_dest[args->daddr, args->dport] += args->data_len;
 }
 tracepoint:block:block_io_start /pid == %d/ {
-    @blkdev_sector_count[args->dev]=count();
-    @blkdev_req[args->sector]=nsecs;
+    @blkdev_sector_count[args->dev] += args->nr_sector;
+    @blkdev_req[args->sector] = nsecs;
 }
 tracepoint:block:block_io_done /@blkdev_req[args->sector] != 0/ {
     @blkdev_dur[args->dev] += nsecs - @blkdev_req[args->sector];

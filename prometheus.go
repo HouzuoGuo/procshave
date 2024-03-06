@@ -48,7 +48,7 @@ func NewMetricsCollector() *MetricsCollector {
 			panic(err)
 		}
 	}
-	return nil
+	return ret
 }
 
 func (metrics *MetricsCollector) Start(address string) error {

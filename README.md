@@ -8,9 +8,10 @@ The name draws inspiration from "yak shaving".
 
 Install `bpftrace` (minimum version v0.20) and start procshave:
 
-```
+```shell
 > go build
-> sudo ./procshave -p=1234 # the targeted PID
+# Substitute 1234 by the target PID.
+> sudo ./procshave -p=1234 2>~/procshave.log
 ```
 
 ## Demo

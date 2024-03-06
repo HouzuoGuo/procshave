@@ -37,9 +37,11 @@ func main() {
 		}
 	}()
 	if promMetricsAddr != "" {
-		if err := metrics.Start(promMetricsAddr); err != nil {
-			log.Printf("prometheus metrics web server errror: %v", err)
-		}
+		go func() {
+			if err := metrics.Start(promMetricsAddr); err != nil {
+				log.Printf("prometheus metrics web server errror: %v", err)
+			}
+		}()
 	}
 	if _, err := tea.NewProgram(model, tea.WithAltScreen()).Run(); err != nil {
 		log.Panic(err)
