@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/procfs/blockdevice"
 )
 
@@ -88,9 +89,10 @@ type BpfTracer struct {
 	TcpTrafficDestinations []BpfNetIOTrafficCounter
 	BlockDeviceIONanos     map[string]int
 	BlockDeviceIOSectors   map[string]int
+	Metrics                *MetricsCollector
 }
 
-func NewBpfTracer(pid int, samplingIntervalSec int) *BpfTracer {
+func NewBpfTracer(pid int, samplingIntervalSec int, metrics *MetricsCollector) *BpfTracer {
 	return &BpfTracer{
 		mutex:                new(sync.Mutex),
 		PID:                  pid,
@@ -99,6 +101,7 @@ func NewBpfTracer(pid int, samplingIntervalSec int) *BpfTracer {
 		FDBytesWritten:       make(map[string]int),
 		BlockDeviceIONanos:   make(map[string]int),
 		BlockDeviceIOSectors: make(map[string]int),
+		Metrics:              metrics,
 	}
 }
 
@@ -169,40 +172,58 @@ interval:s:%d {
 				return
 			}
 			log.Printf("bpftrace stdout: %s", line)
-			var rec BpfMapRecord
-			if err := json.Unmarshal([]byte(line), &rec); err != nil {
-				continue
-			}
-			if rec.Type == "map" && rec.Data != nil {
-				if read := rec.Data["@read_fd"]; read != nil {
-					bpf.mutex.Lock()
-					bpf.FDBytesRead = read
-					bpf.mutex.Unlock()
-				} else if written := rec.Data["@write_fd"]; written != nil {
-					bpf.mutex.Lock()
-					bpf.FDBytesWritten = written
-					bpf.mutex.Unlock()
-				} else if tcpSrc := rec.Data["@tcp_src"]; tcpSrc != nil {
-					bpf.mutex.Lock()
-					bpf.TcpTrafficSources = TcpTrafficFromBpfMap(tcpSrc, false)
-					bpf.mutex.Unlock()
-				} else if tcpDest := rec.Data["@tcp_dest"]; tcpDest != nil {
-					bpf.mutex.Lock()
-					bpf.TcpTrafficDestinations = TcpTrafficFromBpfMap(tcpDest, true)
-					bpf.mutex.Unlock()
-				} else if duration := rec.Data["@blkdev_dur"]; duration != nil {
-					bpf.mutex.Lock()
-					bpf.BlockDeviceIONanos = duration
-					bpf.mutex.Unlock()
-				} else if sectors := rec.Data["@blkdev_sector_count"]; sectors != nil {
-					bpf.mutex.Lock()
-					bpf.BlockDeviceIOSectors = sectors
-					bpf.mutex.Unlock()
-				}
-			}
+			bpf.unmarshalBpfRecord(line)
 		}
 	}()
 	return cmd.Wait()
+}
+
+func (bpf *BpfTracer) unmarshalBpfRecord(line string) {
+	var rec BpfMapRecord
+	if err := json.Unmarshal([]byte(line), &rec); err != nil {
+		return
+	}
+	labels := prometheus.Labels{PidLabel: strconv.Itoa(bpf.PID)}
+	var sum int
+	if rec.Type == "map" && rec.Data != nil {
+		if read := rec.Data["@read_fd"]; read != nil {
+			bpf.mutex.Lock()
+			bpf.FDBytesRead = read
+			bpf.mutex.Unlock()
+			bpf.Metrics.ReadFromFDCount.With(labels).Set(float64(len(read)))
+		} else if written := rec.Data["@write_fd"]; written != nil {
+			bpf.mutex.Lock()
+			bpf.FDBytesWritten = written
+			bpf.mutex.Unlock()
+			bpf.Metrics.WrittenToFDCount.With(labels).Set(float64(len(written)))
+		} else if tcpSrc := rec.Data["@tcp_src"]; tcpSrc != nil {
+			bpf.mutex.Lock()
+			bpf.TcpTrafficSources = TcpTrafficFromBpfMap(tcpSrc, false)
+			bpf.mutex.Unlock()
+			bpf.Metrics.TcpSourceEndpointsCount.With(labels).Set(float64(len(tcpSrc)))
+		} else if tcpDest := rec.Data["@tcp_dest"]; tcpDest != nil {
+			bpf.mutex.Lock()
+			bpf.TcpTrafficDestinations = TcpTrafficFromBpfMap(tcpDest, true)
+			bpf.mutex.Unlock()
+			bpf.Metrics.TcpDestinationEndpointsCount.With(labels).Set(float64(len(tcpDest)))
+		} else if duration := rec.Data["@blkdev_dur"]; duration != nil {
+			bpf.mutex.Lock()
+			bpf.BlockDeviceIONanos = duration
+			bpf.mutex.Unlock()
+			for _, dur := range duration {
+				sum += dur
+			}
+			bpf.Metrics.BlockIOTimeNanos.With(labels).Set(float64(sum))
+		} else if sectors := rec.Data["@blkdev_sector_count"]; sectors != nil {
+			bpf.mutex.Lock()
+			bpf.BlockDeviceIOSectors = sectors
+			bpf.mutex.Unlock()
+			for _, count := range sectors {
+				sum += count
+			}
+			bpf.Metrics.BlockIOSectors.With(labels).Set(float64(sum))
+		}
+	}
 }
 
 type FileIOCounter struct {
