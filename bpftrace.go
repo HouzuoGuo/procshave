@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
 	"os/exec"
 	"regexp"
 	"sort"
@@ -80,21 +81,35 @@ func TcpTrafficFromBpfMap(bpfMap map[string]int, isDest bool) []BpfNetIOTrafficC
 }
 
 type BpfTracer struct {
-	mutex                  *sync.Mutex
-	PID                    int
-	SamplingIntervalSec    int
-	FDBytesRead            map[string]int
-	FDBytesWritten         map[string]int
-	TcpTrafficSources      []BpfNetIOTrafficCounter
-	TcpTrafficDestinations []BpfNetIOTrafficCounter
-	BlockDeviceIONanos     map[string]int
+	mutex               *sync.Mutex
+	stop                chan struct{}
+	PID                 int
+	SamplingIntervalSec int
+	Metrics             *MetricsCollector
+
+	FDBytesRead   map[string]int
+	FDBytesReadTS time.Time
+
+	FDBytesWritten   map[string]int
+	FDBytesWrittenTS time.Time
+
+	TcpTrafficSources   []BpfNetIOTrafficCounter
+	TcpTrafficSourcesTS time.Time
+
+	TcpTrafficDestinations   []BpfNetIOTrafficCounter
+	TcpTrafficDestinationsTS time.Time
+
+	BlockDeviceIONanos   map[string]int
+	BlockDeviceIONanosTS time.Time
+
 	BlockDeviceIOSectors   map[string]int
-	Metrics                *MetricsCollector
+	BlockDeviceIOSectorsTS time.Time
 }
 
 func NewBpfTracer(pid int, samplingIntervalSec int, metrics *MetricsCollector) *BpfTracer {
 	return &BpfTracer{
 		mutex:                new(sync.Mutex),
+		stop:                 make(chan struct{}, 1),
 		PID:                  pid,
 		SamplingIntervalSec:  samplingIntervalSec,
 		FDBytesRead:          make(map[string]int),
@@ -164,8 +179,12 @@ interval:s:%d {
 	if err := cmd.Start(); err != nil {
 		return err
 	}
+	go bpf.Housekeeping()
 	go func() {
 		stdoutReader := bufio.NewReader(stdout)
+		defer func() {
+			close(bpf.stop)
+		}()
 		for {
 			line, err := stdoutReader.ReadString('\n')
 			if err != nil {
@@ -183,45 +202,37 @@ func (bpf *BpfTracer) unmarshalBpfRecord(line string) {
 	if err := json.Unmarshal([]byte(line), &rec); err != nil {
 		return
 	}
-	labels := prometheus.Labels{PidLabel: strconv.Itoa(bpf.PID)}
-	var sum int
 	if rec.Type == "map" && rec.Data != nil {
 		if read := rec.Data["@read_fd"]; read != nil {
 			bpf.mutex.Lock()
 			bpf.FDBytesRead = read
+			bpf.FDBytesReadTS = time.Now()
 			bpf.mutex.Unlock()
-			bpf.Metrics.ReadFromFDCount.With(labels).Set(float64(len(read)))
 		} else if written := rec.Data["@write_fd"]; written != nil {
 			bpf.mutex.Lock()
 			bpf.FDBytesWritten = written
+			bpf.FDBytesWrittenTS = time.Now()
 			bpf.mutex.Unlock()
-			bpf.Metrics.WrittenToFDCount.With(labels).Set(float64(len(written)))
 		} else if tcpSrc := rec.Data["@tcp_src"]; tcpSrc != nil {
 			bpf.mutex.Lock()
 			bpf.TcpTrafficSources = TcpTrafficFromBpfMap(tcpSrc, false)
+			bpf.TcpTrafficSourcesTS = time.Now()
 			bpf.mutex.Unlock()
-			bpf.Metrics.TcpSourceEndpointsCount.With(labels).Set(float64(len(tcpSrc)))
 		} else if tcpDest := rec.Data["@tcp_dest"]; tcpDest != nil {
 			bpf.mutex.Lock()
 			bpf.TcpTrafficDestinations = TcpTrafficFromBpfMap(tcpDest, true)
+			bpf.TcpTrafficDestinationsTS = time.Now()
 			bpf.mutex.Unlock()
-			bpf.Metrics.TcpDestinationEndpointsCount.With(labels).Set(float64(len(tcpDest)))
 		} else if duration := rec.Data["@blkdev_dur"]; duration != nil {
 			bpf.mutex.Lock()
 			bpf.BlockDeviceIONanos = duration
+			bpf.BlockDeviceIONanosTS = time.Now()
 			bpf.mutex.Unlock()
-			for _, dur := range duration {
-				sum += dur
-			}
-			bpf.Metrics.BlockIOTimeNanos.With(labels).Set(float64(sum))
 		} else if sectors := rec.Data["@blkdev_sector_count"]; sectors != nil {
 			bpf.mutex.Lock()
 			bpf.BlockDeviceIOSectors = sectors
+			bpf.BlockDeviceIOSectorsTS = time.Now()
 			bpf.mutex.Unlock()
-			for _, count := range sectors {
-				sum += count
-			}
-			bpf.Metrics.BlockIOSectors.With(labels).Set(float64(sum))
 		}
 	}
 }
@@ -338,4 +349,78 @@ func (bpf *BpfTracer) BlockIOSummary(diskStats map[string]blockdevice.Diskstats)
 		return a.IODuration > b.IODuration
 	})
 	return ret
+}
+
+func (bpf *BpfTracer) Housekeeping() {
+	ticker := time.Tick(time.Duration(bpf.SamplingIntervalSec) * time.Second)
+	for {
+		select {
+		case <-ticker:
+			bpf.mutex.Lock()
+			if time.Since(bpf.FDBytesReadTS) > time.Duration(bpf.SamplingIntervalSec)*time.Second {
+				bpf.FDBytesRead = make(map[string]int)
+			}
+			if time.Since(bpf.FDBytesWrittenTS) > time.Duration(bpf.SamplingIntervalSec)*time.Second {
+				bpf.FDBytesWritten = make(map[string]int)
+			}
+			if time.Since(bpf.TcpTrafficSourcesTS) > time.Duration(bpf.SamplingIntervalSec)*time.Second {
+				bpf.TcpTrafficSources = make([]BpfNetIOTrafficCounter, 0)
+			}
+			if time.Since(bpf.TcpTrafficDestinationsTS) > time.Duration(bpf.SamplingIntervalSec)*time.Second {
+				bpf.TcpTrafficDestinations = make([]BpfNetIOTrafficCounter, 0)
+			}
+			if time.Since(bpf.BlockDeviceIONanosTS) > time.Duration(bpf.SamplingIntervalSec)*time.Second {
+				bpf.BlockDeviceIONanos = make(map[string]int)
+			}
+			if time.Since(bpf.BlockDeviceIOSectorsTS) > time.Duration(bpf.SamplingIntervalSec)*time.Second {
+				bpf.BlockDeviceIOSectors = make(map[string]int)
+			}
+
+			hostname, _ := os.Hostname()
+			labels := prometheus.Labels{PidLabel: strconv.Itoa(bpf.PID), HostnameLabel: hostname}
+
+			sum := 0
+			for _, count := range bpf.FDBytesRead {
+				sum += count
+			}
+			bpf.Metrics.ReadFromFDBytes.With(labels).Set(float64(sum) / float64(bpf.SamplingIntervalSec))
+			bpf.Metrics.ReadFromFDCount.With(labels).Set(float64(len(bpf.FDBytesRead)) / float64(bpf.SamplingIntervalSec))
+
+			sum = 0
+			for _, count := range bpf.FDBytesWritten {
+				sum += count
+			}
+			bpf.Metrics.WrittenToFDBytes.With(labels).Set(float64(sum) / float64(bpf.SamplingIntervalSec))
+			bpf.Metrics.WrittenToFDCount.With(labels).Set(float64(len(bpf.FDBytesWritten)) / float64(bpf.SamplingIntervalSec))
+
+			sum = 0
+			for _, count := range bpf.TcpTrafficSources {
+				sum += count.ByteCounter
+			}
+			bpf.Metrics.TcpSourceTrafficBytes.With(labels).Set(float64(sum) / float64(bpf.SamplingIntervalSec))
+			bpf.Metrics.TcpSourceEndpointsCount.With(labels).Set(float64(len(bpf.TcpTrafficSources)) / float64(bpf.SamplingIntervalSec))
+
+			sum = 0
+			for _, count := range bpf.TcpTrafficDestinations {
+				sum += count.ByteCounter
+			}
+			bpf.Metrics.TcpDestinationTrafficBytes.With(labels).Set(float64(sum) / float64(bpf.SamplingIntervalSec))
+			bpf.Metrics.TcpDestinationEndpointsCount.With(labels).Set(float64(len(bpf.TcpTrafficDestinations)) / float64(bpf.SamplingIntervalSec))
+
+			sum = 0
+			for _, count := range bpf.BlockDeviceIOSectors {
+				sum += count
+			}
+			bpf.Metrics.BlockIOSectors.With(labels).Set(float64(sum) / float64(bpf.SamplingIntervalSec))
+
+			sum = 0
+			for _, count := range bpf.BlockDeviceIONanos {
+				sum += count
+			}
+			bpf.Metrics.BlockIOTimeMillis.With(labels).Set(float64(sum/1000000) / float64(bpf.SamplingIntervalSec))
+			bpf.mutex.Unlock()
+		case <-bpf.stop:
+			return
+		}
+	}
 }

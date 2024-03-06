@@ -82,7 +82,7 @@ type ProcInfo struct {
 	Mutex *sync.RWMutex
 }
 
-func NewProcInfo(pid int, bpfSampleIntervalSec int) *ProcInfo {
+func NewProcInfo(pid int) *ProcInfo {
 	ret := &ProcInfo{PID: pid, Mutex: new(sync.RWMutex)}
 	fs, _ := procfs.NewDefaultFS()
 	stat, _ := fs.Stat()

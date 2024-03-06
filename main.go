@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	BPFSampleIntervalSec = 3
+	BPFSampleIntervalSec = 5
 )
 
 func main() {
@@ -19,7 +19,7 @@ func main() {
 	flag.StringVar(&promMetricsAddr, "metricsaddr", "0.0.0.0:1619", "The host:port to start prometheus metrics server on")
 	flag.Parse()
 
-	procInfo := NewProcInfo(pid, BPFSampleIntervalSec)
+	procInfo := NewProcInfo(pid)
 	metrics := NewMetricsCollector()
 	bpf := NewBpfTracer(pid, BPFSampleIntervalSec, metrics)
 	model := &MainModel{
