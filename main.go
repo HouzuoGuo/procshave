@@ -14,10 +14,17 @@ const (
 
 func main() {
 	var pid int
-	var promMetricsAddr string
+	var promMetricsAddr, command string
 	flag.IntVar(&pid, "p", 1, "The process ID to monitor")
+	flag.StringVar(&command, "comm", "", "Find process by this executable name (alternative to -p)")
 	flag.StringVar(&promMetricsAddr, "metricsaddr", "0.0.0.0:1619", "The host:port to start prometheus metrics server on")
 	flag.Parse()
+
+	if command != "" {
+		if pid = FindPidByComm(command); pid == 0 {
+			log.Fatalf("Failed to find the process running %q", command)
+		}
+	}
 
 	procInfo := NewProcInfo(pid)
 	metrics := NewMetricsCollector()

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -114,4 +115,22 @@ func (info *ProcInfo) Refresh() {
 	for _, disk := range diskStats {
 		info.DiskStats[fmt.Sprintf("%d:%d", disk.MajorNumber, disk.MinorNumber)] = disk
 	}
+}
+
+func FindPidByComm(comm string) int {
+	fs, _ := procfs.NewDefaultFS()
+	procs, err := fs.AllProcs()
+	if err != nil {
+		return 0
+	}
+	sort.Slice(procs, func(i, j int) bool {
+		return procs[i].PID < procs[j].PID
+	})
+	for _, proc := range procs {
+		pComm, _ := proc.Comm()
+		if pComm == comm {
+			return proc.PID
+		}
+	}
+	return 0
 }
